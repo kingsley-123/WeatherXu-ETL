@@ -1,0 +1,178 @@
+x-airflow-common: &airflow-common
+  image: apache/airflow:2.6.3
+  environment: &airflow-common-env
+    AIRFLOW__CORE__EXECUTOR: CeleryExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+    AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://airflow:airflow@postgres/airflow
+    AIRFLOW__CELERY__BROKER_URL: redis://:@redis:6379/0
+    AIRFLOW__CORE__FERNET_KEY: '81HqDtbqAywKSOumSha3BhWNOdQ26slT6K0YaZeZyPs='
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
+    AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+    AIRFLOW__WEBSERVER__SECRET_KEY: '${AIRFLOW_SECRET_KEY:-airflow}'
+    AIRFLOW__CORE__PARALLELISM: 32
+    AIRFLOW__CORE__DAG_FILE_PROCESSOR_TIMEOUT: 600
+    AIRFLOW__WEBSERVER__WORKERS: 4
+    PYTHONPATH: /opt/scripts:/opt/airflow
+  volumes:
+    - ./airflow/dags:/opt/airflow/dags:rw,Z
+    - ./airflow/logs:/opt/airflow/logs:rw,Z
+    - ./airflow/plugins:/opt/airflow/plugins:rw,Z
+    - ./scripts:/opt/scripts:ro,Z
+  user: "${AIRFLOW_UID:-50000}:0"
+  depends_on: &airflow-common-depends-on
+    postgres:
+      condition: service_healthy
+    data-postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+    kafka:
+      condition: service_healthy
+  restart: unless-stopped
+  healthcheck:
+    test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+    interval: 30s
+    timeout: 10s
+    retries: 3
+    start_period: 30s
+
+services:
+  postgres:
+    image: postgres:13
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+      POSTGRES_HOST_AUTH_METHOD: trust
+    volumes:
+      - postgres-db-volume:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 5s
+      retries: 5
+    restart: unless-stopped
+
+  data-postgres:
+    image: postgres:13
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: datahub
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      - "5433:5432"
+    command: >
+      postgres -c listen_addresses='*'
+               -c hba_file=/var/lib/postgresql/data/pg_hba.conf
+    volumes:
+      - data-postgres-db-volume:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 5s
+      retries: 5
+    restart: unless-stopped
+
+  redis:
+    image: redis:latest
+    command: redis-server --appendonly yes
+    expose:
+      - 6379
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 5
+    restart: unless-stopped
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.3.2
+    hostname: zookeeper
+    container_name: zookeeper
+    ports:
+      - "2181:2181"
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "2181"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+
+  kafka:
+    image: confluentinc/cp-kafka:7.3.2
+    hostname: kafka
+    container_name: kafka
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    depends_on:
+      - zookeeper
+    healthcheck:
+      test: ["CMD", "kafka-topics.sh", "--bootstrap-server", "localhost:9092", "--list"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+
+  spark:
+    image: apache/spark:3.4.0-python3
+    hostname: spark
+    container_name: spark
+    volumes:
+      - ./spark:/opt/spark/work-dir
+    ports:
+      - "8081:8080"
+      - "7077:7077"
+    environment:
+      - SPARK_MODE=master
+      - SPARK_RPC_AUTHENTICATION_ENABLED=no
+      - SPARK_RPC_ENCRYPTION_ENABLED=no
+      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
+      - JAVA_OPTS=-Dorg.apache.hadoop.yarn.server.webproxy.amfilter.AmIpFilter.mode=STATIC -Dorg.apache.hadoop.yarn.server.webproxy.amfilter.AmIpFilter.iplist=localhost:127.0.0.1
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  airflow-webserver:
+    <<: *airflow-common
+    command: webserver
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
+    restart: unless-stopped
+
+  airflow-worker:
+    <<: *airflow-common
+    command: celery worker
+    restart: unless-stopped
+
+  airflow-init:
+    <<: *airflow-common
+    command: version
+    environment:
+      <<: *airflow-common-env
+      _AIRFLOW_DB_UPGRADE: 'true'
+      _AIRFLOW_WWW_USER_CREATE: 'true'
+      _AIRFLOW_WWW_USER_USERNAME: ${_AIRFLOW_WWW_USER_USERNAME:-airflow}
+      _AIRFLOW_WWW_USER_PASSWORD: ${_AIRFLOW_WWW_USER_PASSWORD:-airflow}
+    restart: "no"
+
+volumes:
+  postgres-db-volume:
+  data-postgres-db-volume:
