@@ -1,3 +1,5 @@
+# Please only run this file once because the data is static
+
 import psycopg2  # type: ignore
 from psycopg2.extras import execute_batch  # type: ignore
 
@@ -64,7 +66,7 @@ VALUES (%s, %s, %s);
 """
 
 # Use execute_batch to insert all rows at once
-execute_batch(cursor, insert_sql, cities)  # Corrected usage
+execute_batch(cursor, insert_sql, cities)  
 
 # Commit the transaction
 conn.commit()
