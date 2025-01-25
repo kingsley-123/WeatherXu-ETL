@@ -26,8 +26,6 @@ x-airflow-common: &airflow-common
       condition: service_healthy
     redis:
       condition: service_healthy
-    kafka:
-      condition: service_healthy
   restart: unless-stopped
   healthcheck:
     test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
@@ -35,8 +33,53 @@ x-airflow-common: &airflow-common
     timeout: 10s
     retries: 3
     start_period: 30s
+  networks:
+    - my-network
 
 services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:6.1.1
+    hostname: zookeeper
+    container_name: zookeeper
+    ports:
+      - "2181:2181"
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    networks:
+      - my-network
+
+  broker:
+    image: confluentinc/cp-server:6.1.1
+    hostname: broker
+    container_name: broker
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+      - "9101:9101"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181'
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://broker:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_METRIC_REPORTERS: io.confluent.metrics.reporter.ConfluentMetricsReporter
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_CONFLUENT_LICENSE_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_CONFLUENT_BALANCER_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_JMX_PORT: 9101
+      KAFKA_JMX_HOSTNAME: localhost
+      KAFKA_CONFLUENT_SCHEMA_REGISTRY_URL: http://schema-registry:8081
+      CONFLUENT_METRICS_REPORTER_BOOTSTRAP_SERVERS: broker:29092
+      CONFLUENT_METRICS_REPORTER_TOPIC_REPLICAS: 1
+      CONFLUENT_METRICS_ENABLE: 'true'
+      CONFLUENT_SUPPORT_CUSTOMER_ID: 'anonymous'
+    networks:
+      - my-network
+
   postgres:
     image: postgres:13
     environment:
@@ -51,6 +94,8 @@ services:
       interval: 5s
       retries: 5
     restart: unless-stopped
+    networks:
+      - my-network
 
   data-postgres:
     image: postgres:13
@@ -71,10 +116,14 @@ services:
       interval: 5s
       retries: 5
     restart: unless-stopped
+    networks:
+      - my-network
 
   redis:
     image: redis:latest
     command: redis-server --appendonly yes
+    volumes:
+      - redis-data:/data
     expose:
       - 6379
     healthcheck:
@@ -82,63 +131,8 @@ services:
       interval: 5s
       retries: 5
     restart: unless-stopped
-
-  zookeeper:
-    image: confluentinc/cp-zookeeper:7.3.2
-    hostname: zookeeper
-    container_name: zookeeper
-    ports:
-      - "2181:2181"
-    environment:
-      ZOOKEEPER_CLIENT_PORT: 2181
-      ZOOKEEPER_TICK_TIME: 2000
-    healthcheck:
-      test: ["CMD", "nc", "-z", "localhost", "2181"]
-      interval: 10s
-      timeout: 10s
-      retries: 5
-
-  kafka:
-    image: confluentinc/cp-kafka:7.3.2
-    hostname: kafka
-    container_name: kafka
-    ports:
-      - "9092:9092"
-    environment:
-      KAFKA_BROKER_ID: 1
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
-      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
-      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-    depends_on:
-      - zookeeper
-    healthcheck:
-      test: ["CMD", "kafka-topics.sh", "--bootstrap-server", "localhost:9092", "--list"]
-      interval: 10s
-      timeout: 10s
-      retries: 5
-
-  spark:
-    image: apache/spark:3.4.0-python3
-    hostname: spark
-    container_name: spark
-    volumes:
-      - ./spark:/opt/spark/work-dir
-    ports:
-      - "8081:8080"
-      - "7077:7077"
-    environment:
-      - SPARK_MODE=master
-      - SPARK_RPC_AUTHENTICATION_ENABLED=no
-      - SPARK_RPC_ENCRYPTION_ENABLED=no
-      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
-      - JAVA_OPTS=-Dorg.apache.hadoop.yarn.server.webproxy.amfilter.AmIpFilter.mode=STATIC -Dorg.apache.hadoop.yarn.server.webproxy.amfilter.AmIpFilter.iplist=localhost:127.0.0.1
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
+    networks:
+      - my-network
 
   airflow-webserver:
     <<: *airflow-common
@@ -151,16 +145,22 @@ services:
       timeout: 10s
       retries: 5
     restart: unless-stopped
+    networks:
+      - my-network
 
   airflow-scheduler:
     <<: *airflow-common
     command: scheduler
     restart: unless-stopped
+    networks:
+      - my-network
 
   airflow-worker:
     <<: *airflow-common
     command: celery worker
     restart: unless-stopped
+    networks:
+      - my-network
 
   airflow-init:
     <<: *airflow-common
@@ -172,7 +172,52 @@ services:
       _AIRFLOW_WWW_USER_USERNAME: ${_AIRFLOW_WWW_USER_USERNAME:-airflow}
       _AIRFLOW_WWW_USER_PASSWORD: ${_AIRFLOW_WWW_USER_PASSWORD:-airflow}
     restart: "no"
+    networks:
+      - my-network
+
+  spark-master:
+    image: apache/spark:3.5.4-python3
+    container_name: spark-master
+    command: /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master
+    ports:
+      - "9090:8080"  # Spark Master Web UI
+      - "7077:7077"  # Spark Master Communication Port
+    environment:
+      SPARK_MASTER_WEBUI_PORT: 8080
+      SPARK_MASTER_HOST: spark-master
+    networks:
+      - my-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  spark-worker:
+    image: apache/spark:3.5.4-python3
+    container_name: spark-worker
+    command: /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077
+    depends_on:
+      - spark-master
+    environment:
+      SPARK_MODE: worker
+      SPARK_WORKER_CORES: 2
+      SPARK_WORKER_MEMORY: 1g
+      SPARK_MASTER_URL: spark://spark-master:7077
+    networks:
+      - my-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
 volumes:
   postgres-db-volume:
   data-postgres-db-volume:
+  redis-data:
+
+networks:
+  my-network:
+    name: my-custom-network
+    driver: bridge
