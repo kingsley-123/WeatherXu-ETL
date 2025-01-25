@@ -80,6 +80,24 @@ services:
     networks:
       - my-network
 
+  kafka-setup:
+    image: confluentinc/cp-kafka:6.1.1
+    container_name: kafka-setup
+    depends_on:
+      - broker
+    entrypoint: [ "/bin/sh", "-c" ]
+    command: >
+      "
+      echo 'Waiting for Kafka broker to be ready...';
+      while ! nc -z broker 9092; do sleep 1; done;
+      echo 'Creating Kafka topics...';
+      kafka-topics --create --if-not-exists --bootstrap-server broker:29092 --topic current_weatherxu --partitions 1 --replication-factor 1 --config cleanup.policy=delete --config retention.bytes=1048576 --config retention.ms=60000;
+      kafka-topics --create --if-not-exists --bootstrap-server broker:29092 --topic 48_hour_forecast_weatherxu --partitions 1 --replication-factor 1 --config cleanup.policy=delete --config retention.bytes=1048576 --config retention.ms=60000;
+      echo 'Kafka topics created successfully!';
+      "
+    networks:
+      - my-network
+
   postgres:
     image: postgres:13
     environment:
