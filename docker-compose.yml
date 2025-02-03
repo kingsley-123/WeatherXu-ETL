@@ -18,7 +18,6 @@ x-airflow-common: &airflow-common
     - ./airflow/logs:/opt/airflow/logs:rw,Z
     - ./airflow/plugins:/opt/airflow/plugins:rw,Z
     - ./scripts:/opt/scripts:ro,Z
-    - ./airflow/requirements.txt:/opt/airflow/requirements.txt:ro,Z  # Mount requirements.txt
   user: "${AIRFLOW_UID:-50000}:0"
   depends_on: &airflow-common-depends-on
     postgres:
@@ -196,34 +195,6 @@ services:
       _AIRFLOW_WWW_USER_USERNAME: ${_AIRFLOW_WWW_USER_USERNAME:-airflow}
       _AIRFLOW_WWW_USER_PASSWORD: ${_AIRFLOW_WWW_USER_PASSWORD:-airflow}
     restart: "no"
-    networks:
-      - my-network
-
-  spark-master:
-    image: bitnami/spark:latest
-    command: bin/spark-class org.apache.spark.deploy.master.Master
-    volumes:
-      - ./spark-app:/opt/spark-app:rw
-      - ./spark-jars:/opt/spark/jars:rw
-    ports:
-      - "9090:8080"
-      - "7077:7077"
-    networks:
-      - my-network
-
-  spark-worker:
-    image: bitnami/spark:latest
-    command: bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077
-    volumes:
-      - ./spark-app:/opt/spark-app:rw
-      - ./spark-jars:/opt/spark/jars:rw
-    depends_on:
-      - spark-master
-    environment:
-      SPARK_MODE: worker
-      SPARK_WORKER_CORES: 2
-      SPARK_WORKER_MEMORY: 1g
-      SPARK_MASTER_URL: spark://spark-master:7077
     networks:
       - my-network
 
