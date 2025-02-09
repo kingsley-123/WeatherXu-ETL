@@ -9,7 +9,7 @@ api_base_url = "https://api.weatherxu.com/v1/weather"
 api_key = "3c394457b719f808a9c9abfdcc215336"
 
 # kafka configuration
-kafka_broker = "localhost:9092"
+kafka_broker = "broker:29092"
 kafka_topic = "48_hour_forecast_weatherxu"
 
 # Define cities and base URL
