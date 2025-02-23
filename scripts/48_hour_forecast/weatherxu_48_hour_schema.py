@@ -55,7 +55,7 @@ print("Table 'weatherxu_48.dim_condition' created.")
 # Create the weather_fact table
 create_fact_weather_table = """
 CREATE TABLE weatherxu_48.fact_weather (
-    id SERIAL PRIMARY KEY
+    id SERIAL PRIMARY KEY,
     city_id INT REFERENCES weatherxu_current.dim_city(city_id),
     date_id INT REFERENCES weatherxu_current.dim_date(date_id),
     condition_id INT REFERENCES weatherxu_current.dim_condition(condition_id),
