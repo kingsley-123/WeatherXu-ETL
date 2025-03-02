@@ -19,8 +19,8 @@ def consume_weather_data():
         'current_weatherxu',
         bootstrap_servers=['broker:29092'], 
         value_deserializer=lambda x: json.loads(x.decode('utf-8')),
-        auto_offset_reset='latest',  # Start from the latest message
-        consumer_timeout_ms=600000   # Timeout after 10 minutes if no new message
+        auto_offset_reset='earliest',  # Start from the latest message
+        consumer_timeout_ms=120000   # Timeout after 10 minutes if no new message
     )
     
     for message in consumer:
@@ -36,7 +36,7 @@ def consume_weather_data():
 
 def load_date_data():
     date = consume_weather_data()
-    date['datetime'] = pd.to_datetime(date['datetime'], unit='s', utc=True)
+    date['datetime'] = pd.to_datetime(date['datetime'], format='%Y-%m-%d %H:%M:%S', utc=True)
     date_df = date[['datetime']].drop_duplicates()
     date_df['datetime'] = pd.to_datetime(date_df['datetime'])
     date_df['date'] = date_df['datetime'].dt.date
@@ -182,3 +182,4 @@ def load_currentweather_data():
 load_date_data()
 load_condition_data()
 load_currentweather_data()
+
