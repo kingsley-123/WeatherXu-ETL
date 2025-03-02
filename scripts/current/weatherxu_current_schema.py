@@ -44,6 +44,16 @@ city_data = [
     ('GBSHF', 'Sheffield', 53.3811, -1.4701, 'Great Britain'),
     ('GBLDS', 'Leeds', 53.8008, -1.5491, 'Great Britain'),
     ('GBEDH', 'Edinburgh', 55.9533, -3.1883, 'Great Britain'),
+    ('GBLCE', 'Cardiff', 51.4816, -3.1791, 'Great Britain'),
+    ('GBBIR', 'Belfast', 54.5973, -5.9301, 'Great Britain'),
+    ('GBLND', 'Newcastle', 54.9783, -1.6178, 'Great Britain'),
+    ('GBMAN', 'Brighton', 50.8225, -0.1372, 'Great Britain'),
+    ('GBGLG', 'Nottingham', 52.9548, -1.1581, 'Great Britain'),
+    ('GBLIV', 'Southampton', 50.9097, -1.4044, 'Great Britain'),
+    ('GBBST', 'Plymouth', 50.3755, -4.1427, 'Great Britain'),
+    ('GBSHF', 'Aberdeen', 57.1497, -2.0943, 'Great Britain'),
+    ('GBLDS', 'Cambridge', 52.2053, 0.1218, 'Great Britain'),
+    ('GBEDH', 'Oxford', 51.7520, -1.2577, 'Great Britain'),
     ('GBLCE', 'Leicester', 52.6369, -1.1398, 'Great Britain')
 ]
 
