@@ -1,5 +1,4 @@
 import requests
-from datetime import datetime, timezone
 import psycopg2  # type: ignore
 from kafka import KafkaProducer  # type: ignore
 import json
@@ -290,7 +289,7 @@ def current_data():
         if current_weather is None or dt is None:
             continue
 
-        formatted_datetime = datetime.fromtimestamp(dt, timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
+ 
         message = {
             "city": city["city"],
             "temperature": current_weather.get("temperature"),
@@ -303,7 +302,7 @@ def current_data():
             "cloud_cover": current_weather.get("cloudCover"),
             "dew_point": current_weather.get("dewPoint"),
             "condition": current_weather.get("icon"),
-            "datetime": formatted_datetime,
+            "datetime": current_weather.get("dt"),
         }
 
         produce_to_kafka(

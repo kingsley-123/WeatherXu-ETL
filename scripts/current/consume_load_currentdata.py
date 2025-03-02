@@ -1,6 +1,7 @@
 import psycopg2  # type: ignore
 from psycopg2.extras import execute_batch  # type: ignore
 import pandas as pd  # Ensure pandas is imported
+from datetime import datetime, timezone
 from kafka import KafkaConsumer
 import json
 
@@ -18,22 +19,24 @@ def consume_weather_data():
         'current_weatherxu',
         bootstrap_servers=['broker:29092'], 
         value_deserializer=lambda x: json.loads(x.decode('utf-8')),
-        auto_offset_reset='earliest',
-        consumer_timeout_ms=120000
+        auto_offset_reset='latest',  # Start from the latest message
+        consumer_timeout_ms=600000   # Timeout after 10 minutes if no new message
     )
     
     for message in consumer:
         messages.append(message.value)
         
-        if len(messages) >= 20:
+        if len(messages) >= 232:
             break
     
+    # Return all 232 records as a DataFrame
     df = pd.DataFrame(messages)
     
     return df
 
 def load_date_data():
     date = consume_weather_data()
+    date['datetime'] = pd.to_datetime(date['datetime'], unit='s', utc=True)
     date_df = date[['datetime']].drop_duplicates()
     date_df['datetime'] = pd.to_datetime(date_df['datetime'])
     date_df['date'] = date_df['datetime'].dt.date
@@ -74,7 +77,6 @@ def load_date_data():
             cursor.close()
         if 'conn' in locals():
             conn.close()
-
 
 def load_condition_data():
     condition_df = consume_weather_data() 
