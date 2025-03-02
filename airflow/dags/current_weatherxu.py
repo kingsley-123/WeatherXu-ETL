@@ -39,14 +39,6 @@ def load_condition_data():
         logging.error(f"Error in load_condition_data: {str(e)}")
         raise
 
-def load_city_data():
-    try:
-        from consume_load_currentdata import load_city_data  # type: ignore
-        return load_city_data()
-    except Exception as e:
-        logging.error(f"Error in load_city_data: {str(e)}")
-        raise
-
 def load_currentweather_data():
     try:
         from consume_load_currentdata import load_currentweather_data  # type: ignore
@@ -82,8 +74,7 @@ with DAG(
     consume_currentdata_from_kafka = create_python_operator('consume_current_from_kafka', consume_currentdata)
     load_date_data = create_python_operator('load_date', load_date_data)
     load_condition_data = create_python_operator('load_condition', load_condition_data)
-    load_city_data = create_python_operator('load_city', load_city_data)
     load_currentweather_data = create_python_operator('load_currentweather', load_currentweather_data)
 
     # Task dependencies
-    produce_current_to_kafka >> consume_currentdata_from_kafka >> [load_date_data, load_condition_data, load_city_data] >> load_currentweather_data
+    produce_current_to_kafka >> consume_currentdata_from_kafka >> [load_date_data, load_condition_data] >> load_currentweather_data
