@@ -19,15 +19,44 @@ cursor.execute("DROP SCHEMA IF EXISTS weatherxu_current CASCADE;")
 cursor.execute("CREATE SCHEMA weatherxu_current;")
 print("Schema 'weatherxu_current' dropped and recreated.")
 
-# Create the dim_city table
 create_dim_city_table = """
 CREATE TABLE weatherxu_current.dim_city (
     city_id SERIAL PRIMARY KEY,
-    city_name VARCHAR(100) NOT NULL
+    city_code VARCHAR(100),
+    city_name VARCHAR(100) NOT NULL,
+    latitude DECIMAL(9, 6),
+    longitude DECIMAL(9, 6),
+    country VARCHAR(100)
 );
 """
+
 cursor.execute(create_dim_city_table)
 print("Table 'weatherxu_current.dim_city' created.")
+
+# Data to insert into the table
+city_data = [
+    ('GBBIR', 'Birmingham', 52.4862, -1.8904, 'Great Britain'),
+    ('GBLND', 'London', 51.5074, -0.1278, 'Great Britain'),
+    ('GBMAN', 'Manchester', 53.4808, -2.2426, 'Great Britain'),
+    ('GBGLG', 'Glasgow', 55.8642, -4.2518, 'Great Britain'),
+    ('GBLIV', 'Liverpool', 53.4084, -2.9916, 'Great Britain'),
+    ('GBBST', 'Bristol', 51.4545, -2.5879, 'Great Britain'),
+    ('GBSHF', 'Sheffield', 53.3811, -1.4701, 'Great Britain'),
+    ('GBLDS', 'Leeds', 53.8008, -1.5491, 'Great Britain'),
+    ('GBEDH', 'Edinburgh', 55.9533, -3.1883, 'Great Britain'),
+    ('GBLCE', 'Leicester', 52.6369, -1.1398, 'Great Britain')
+]
+
+# Inserting the data into the table
+insert_query = """
+INSERT INTO weatherxu_current.dim_city (city_code, city_name, latitude, longitude, country)
+VALUES (%s, %s, %s, %s, %s);
+"""
+
+for city in city_data:
+    cursor.execute(insert_query, city)
+    
+print("Data inserted into 'weatherxu_current.dim_city' table.")
 
 # Create the dim_date table
 create_dim_date_table = """
