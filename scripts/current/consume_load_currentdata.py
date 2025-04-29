@@ -1,6 +1,6 @@
 import psycopg2  # type: ignore
 from psycopg2.extras import execute_batch  # type: ignore
-import pandas as pd  # Ensure pandas is imported
+import pandas as pd 
 from datetime import datetime, timezone
 from kafka import KafkaConsumer
 import json
@@ -13,32 +13,62 @@ user = "airflow"
 password = "airflow"
 
 def consume_weather_data():
-    messages = []
-    
     consumer = KafkaConsumer(
         'current_weatherxu',
-        bootstrap_servers=['broker:29092'], 
+        bootstrap_servers=['broker:29092'],
+        auto_offset_reset='earliest',
+        enable_auto_commit=True,
+        group_id='weather_consumer_group',
         value_deserializer=lambda x: json.loads(x.decode('utf-8')),
-        auto_offset_reset='earliest',  # Start from the latest message
-        consumer_timeout_ms=120000   # Timeout after 10 minutes if no new message
+        consumer_timeout_ms=10000  # Stop consuming after 10 seconds of no messages
     )
     
-    for message in consumer:
-        messages.append(message.value)
-        
-        if len(messages) >= 232:
-            break
+    data_list = []
+    try:
+        for message in consumer:
+            data_list.append(message.value)
+    except Exception as e:
+        print(f"Error consuming Kafka messages: {e}")
+    finally:
+        consumer.close()
     
-    # Return all 232 records as a DataFrame
-    df = pd.DataFrame(messages)
+    if not data_list:
+        return None
     
-    return df
+    # Convert the list of dictionaries to a DataFrame
+    return pd.DataFrame(data_list)
 
-def load_date_data():
-    date = consume_weather_data()
-    date['datetime'] = pd.to_datetime(date['datetime'], format='%Y-%m-%d %H:%M:%S', utc=True)
-    date_df = date[['datetime']].drop_duplicates()
-    date_df['datetime'] = pd.to_datetime(date_df['datetime'])
+def main():
+    # Get the data once
+    weather_data = consume_weather_data()
+    
+    if weather_data is None or weather_data.empty:
+        print("No data was consumed from Kafka. Exiting.")
+        return
+    
+    # Check required columns
+    required_columns = ['datetime', 'condition', 'city', 'temperature', 'humidity', 
+                        'wind_speed', 'pressure', 'precip_intensity', 'visibility', 
+                        'uv_index', 'cloud_cover', 'dew_point']
+    
+    for col in required_columns:
+        if col not in weather_data.columns:
+            print(f"Required column '{col}' is missing. Available columns: {weather_data.columns}")
+            return
+    
+    # Process date dimension
+    load_date_data(weather_data)
+    
+    # Process condition dimension
+    load_condition_data(weather_data)
+    
+    # Process weather facts
+    load_currentweather_data(weather_data)
+
+def load_date_data(df):
+    # Convert Unix timestamp to datetime
+    df['datetime'] = pd.to_datetime(df['datetime'], unit='s')
+    date_df = df[['datetime']].drop_duplicates()
     date_df['date'] = date_df['datetime'].dt.date
     date_df['hour_minute'] = date_df['datetime'].dt.strftime('%H:%M')
     date_df['day_of_week'] = date_df['datetime'].dt.day_name()
@@ -78,10 +108,8 @@ def load_date_data():
         if 'conn' in locals():
             conn.close()
 
-def load_condition_data():
-    condition_df = consume_weather_data() 
-    condition_df = condition_df[['condition']].drop_duplicates(subset='condition')
-
+def load_condition_data(df):
+    condition_df = df[['condition']].drop_duplicates(subset='condition')
     try:
         conn = psycopg2.connect(host=host, port=port, dbname=dbname, user=user, password=password)
         cursor = conn.cursor()
@@ -114,18 +142,23 @@ def load_condition_data():
         if 'conn' in locals():
             conn.close()
 
-def load_currentweather_data():
-    conn = psycopg2.connect(host=host, port=port, dbname=dbname, user=user, password=password)
-    cursor = conn.cursor()
-
+def load_currentweather_data(df):
     try:
+        conn = psycopg2.connect(host=host, port=port, dbname=dbname, user=user, password=password)
+        cursor = conn.cursor()
+        
         # Use CASCADE to truncate dependent tables
         cursor.execute("TRUNCATE TABLE weatherxu_current.fact_weather CASCADE;")
 
         # Reset the sequence for the fact_weather table
         cursor.execute("ALTER SEQUENCE weatherxu_current.fact_weather_id_seq RESTART WITH 1;")
         
-        current_df = consume_weather_data() 
+        # Use the DataFrame that was already passed in, not calling consume_weather_data() again
+        current_df = df.copy()
+        
+        # Convert datetime to standard datetime format if it's still a Unix timestamp
+        if isinstance(current_df['datetime'].iloc[0], (int, float)):
+            current_df['datetime'] = pd.to_datetime(current_df['datetime'], unit='s')
 
         cursor.execute("SELECT city_id, city_code, city_name, latitude, longitude, country FROM weatherxu_current.dim_city")
         city_mapping = {row[2]: row[0] for row in cursor.fetchall()}
@@ -140,7 +173,8 @@ def load_currentweather_data():
         for _, row in current_df.iterrows():
             city_id = city_mapping.get(row['city'], None)  
             condition_id = condition_mapping.get(row['condition'], None)  
-            date_id = date_mapping.get(pd.to_datetime(row['datetime']).date(), None)  
+            date_id = date_mapping.get(row['datetime'].date(), None)  
+            
             weather_data.append(( 
                city_id, date_id, condition_id, row['temperature'], row['humidity'],
                row['wind_speed'], row['pressure'], row['precip_intensity'], row['visibility'], 
@@ -152,18 +186,7 @@ def load_currentweather_data():
                 city_id, date_id, condition_id, temperature, humidity, wind_speed, pressure, 
                 precip_intensity, visibility, uv_index, cloud_cover, dew_point
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            ON CONFLICT (id) DO UPDATE SET
-                condition_id = EXCLUDED.condition_id,
-                temperature = EXCLUDED.temperature,
-                humidity = EXCLUDED.humidity,
-                wind_speed = EXCLUDED.wind_speed,
-                pressure = EXCLUDED.pressure,
-                precip_intensity = EXCLUDED.precip_intensity,
-                visibility = EXCLUDED.visibility,
-                uv_index = EXCLUDED.uv_index,
-                cloud_cover = EXCLUDED.cloud_cover,
-                dew_point = EXCLUDED.dew_point;
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
         """
 
         execute_batch(cursor, query, weather_data)
@@ -178,8 +201,5 @@ def load_currentweather_data():
         if 'conn' in locals():
             conn.close()
 
-# Load the data
-load_date_data()
-load_condition_data()
-load_currentweather_data()
-
+# Execute the main function
+main()

@@ -71,7 +71,7 @@ default_args = {
 }
 
 with DAG(
-    "current_weatherxu",
+    "48_weatherxu",
     default_args=default_args,
     schedule_interval="0 0 */2 * *",  # Every 48 hours
     catchup=False

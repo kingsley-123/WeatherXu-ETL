@@ -9,8 +9,8 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../.
 
 def produce_currentdata():
     try:
-        from produce_currentdata_to_kafka import current_data  # type: ignore
-        return current_data()
+        from produce_currentdata_to_kafka import consume_weather_data  # type: ignore
+        return consume_weather_data()
     except Exception as e:
         logging.error(f"Error in produce_currentdata: {str(e)}")
         raise
@@ -23,28 +23,12 @@ def consume_currentdata():
         logging.error(f"Error in consume_currentdata: {str(e)}")
         raise
 
-def load_date_data():
+def load_data():
     try:
-        from consume_load_currentdata import load_date_data  # type: ignore
-        return load_date_data()
+        from consume_load_currentdata import main  # type: ignore
+        return main()
     except Exception as e:
-        logging.error(f"Error in load_date_data: {str(e)}")
-        raise
-
-def load_condition_data():
-    try:
-        from consume_load_currentdata import load_condition_data  # type: ignore
-        return load_condition_data()
-    except Exception as e:
-        logging.error(f"Error in load_condition_data: {str(e)}")
-        raise
-
-def load_currentweather_data():
-    try:
-        from consume_load_currentdata import load_currentweather_data  # type: ignore
-        return load_currentweather_data()
-    except Exception as e:
-        logging.error(f"Error in load_currentweather_data: {str(e)}")
+        logging.error(f"Error in main: {str(e)}")
         raise
 
 # Function to create PythonOperators
@@ -57,7 +41,7 @@ def create_python_operator(task_id, python_callable):
 
 default_args = {
     "owner": "airflow",
-    "start_date": datetime(2025, 1, 25),
+    "start_date": datetime(2025, 4, 26),
     "retries": 1,
     "retry_delay": timedelta(minutes=5),
 }
@@ -65,16 +49,13 @@ default_args = {
 with DAG(
     "current_weatherxu",
     default_args=default_args,
-    schedule_interval="0 */2 * * *",  # Every 2 hours
+    schedule_interval="0 */3 * * *",  # Every 3 hours
     catchup=False
 ) as dag:
   
     # Create tasks using the create_python_operator function
     produce_current_to_kafka = create_python_operator('produce_current_to_kafka', produce_currentdata)
     consume_currentdata_from_kafka = create_python_operator('consume_current_from_kafka', consume_currentdata)
-    load_date_data = create_python_operator('load_date', load_date_data)
-    load_condition_data = create_python_operator('load_condition', load_condition_data)
-    load_currentweather_data = create_python_operator('load_currentweather', load_currentweather_data)
+    load_data_task = create_python_operator('load_data', load_data)
 
-    # Task dependencies
-    produce_current_to_kafka >> consume_currentdata_from_kafka >> [load_date_data, load_condition_data] >> load_currentweather_data
+    produce_current_to_kafka >> consume_currentdata_from_kafka >> load_data_task

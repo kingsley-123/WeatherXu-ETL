@@ -95,10 +95,10 @@ services:
       "
       echo 'Waiting for Kafka broker to be ready...';
       while ! nc -z broker 9092; do sleep 1; done;
-      echo 'Creating Kafka topics...';
-      kafka-topics --create --if-not-exists --bootstrap-server broker:29092 --topic current_weatherxu --partitions 1 --replication-factor 1 --config cleanup.policy=delete --config retention.bytes=1048576 --config retention.ms=7200000;
-      kafka-topics --create --if-not-exists --bootstrap-server broker:29092 --topic 48_hour_forecast_weatherxu --partitions 1 --replication-factor 1 --config cleanup.policy=delete --config retention.bytes=1048576 --config retention.ms=86400000;
-      echo 'Kafka topics created successfully!';
+      echo 'Creating compacted Kafka topics...';
+      kafka-topics --create --if-not-exists --bootstrap-server broker:29092 --topic current_weatherxu --partitions 3 --replication-factor 1 --config cleanup.policy=compact;
+      kafka-topics --create --if-not-exists --bootstrap-server broker:29092 --topic 48_hour_forecast_weatherxu --partitions 3 --replication-factor 1 --config cleanup.policy=compact;
+      echo 'Topic created with compaction!';
       "
     networks:
       - my-network
