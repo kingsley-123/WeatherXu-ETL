@@ -14,7 +14,7 @@ password = "airflow"
 
 def consume_weather_data():
     consumer = KafkaConsumer(
-        'hourly_weatherxu',
+        'daily_weatherxu',
         bootstrap_servers=['broker:29092'],
         auto_offset_reset='earliest',
         enable_auto_commit=True,
@@ -47,7 +47,7 @@ def main():
         return
     
     # Check required columns
-    required_columns = ['datetime', 'condition', 'city', 'temperature', 'humidity', 
+    required_columns = ['datetime', 'condition', 'city', 'max_temperature','min_temperature','humidity', 
                         'wind_speed', 'pressure', 'precip_intensity', 'visibility', 
                         'uv_index', 'cloud_cover', 'dew_point']
     
@@ -63,7 +63,7 @@ def main():
     load_condition_data(weather_data)
     
     # Process weather facts
-    load_hourlyweather_data(weather_data)
+    load_dailyweather_data(weather_data)
 
 def load_date_data(df):
     # Convert Unix timestamp to datetime
@@ -78,8 +78,8 @@ def load_date_data(df):
         cursor = conn.cursor()
         
         # Then truncate and load data
-        cursor.execute("TRUNCATE TABLE weatherxu_hourly.dim_date CASCADE;")
-        cursor.execute("ALTER SEQUENCE weatherxu_hourly.dim_date_date_id_seq RESTART WITH 1;")
+        cursor.execute("TRUNCATE TABLE weatherxu_daily.dim_date CASCADE;")
+        cursor.execute("ALTER SEQUENCE weatherxu_daily.dim_date_date_id_seq RESTART WITH 1;")
         
         date_data = [
             (row['datetime'], row['date'], row['hour_minute'], row['day_of_week'])
@@ -87,7 +87,7 @@ def load_date_data(df):
         ]
 
         query = """
-            INSERT INTO weatherxu_hourly.dim_date 
+            INSERT INTO weatherxu_daily.dim_date 
             (datetime, date, hour_minute, day_of_week)
             VALUES (%s, %s, %s, %s);
         """
@@ -111,17 +111,17 @@ def load_condition_data(df):
         cursor = conn.cursor()
 
         # Use CASCADE to truncate dependent tables
-        cursor.execute("TRUNCATE TABLE weatherxu_hourly.dim_condition CASCADE;")
+        cursor.execute("TRUNCATE TABLE weatherxu_daily.dim_condition CASCADE;")
 
         # Reset the sequence for the fact_weather table
-        cursor.execute("ALTER SEQUENCE weatherxu_hourly.dim_condition_condition_id_seq RESTART WITH 1;")
+        cursor.execute("ALTER SEQUENCE weatherxu_daily.dim_condition_condition_id_seq RESTART WITH 1;")
         
         # Prepare data for batch insertion (only condition column)
         condition_data = [(row['condition'],) for _, row in condition_df.iterrows()]
 
         # Query for insertion
         query = """
-            INSERT INTO weatherxu_hourly.dim_condition (condition_name)
+            INSERT INTO weatherxu_daily.dim_condition (condition_name)
             VALUES (%s);
         """
 
@@ -138,16 +138,16 @@ def load_condition_data(df):
         if 'conn' in locals():
             conn.close()
 
-def load_hourlyweather_data(df):
+def load_dailyweather_data(df):
     try:
         conn = psycopg2.connect(host=host, port=port, dbname=dbname, user=user, password=password)
         cursor = conn.cursor()
         
         # Use CASCADE to truncate dependent tables
-        cursor.execute("TRUNCATE TABLE weatherxu_hourly.fact_weather CASCADE;")
+        cursor.execute("TRUNCATE TABLE weatherxu_daily.fact_weather CASCADE;")
 
         # Reset the sequence for the fact_weather table
-        cursor.execute("ALTER SEQUENCE weatherxu_hourly.fact_weather_id_seq RESTART WITH 1;")
+        cursor.execute("ALTER SEQUENCE weatherxu_daily.fact_weather_id_seq RESTART WITH 1;")
         
         # Use the DataFrame that was already passed in, not calling consume_weather_data() again
         current_df = df.copy()
@@ -156,14 +156,14 @@ def load_hourlyweather_data(df):
         if isinstance(current_df['datetime'].iloc[0], (int, float)):
             current_df['datetime'] = pd.to_datetime(current_df['datetime'], unit='s')
 
-        cursor.execute("SELECT city_id, city_code, city_name, latitude, longitude, country FROM weatherxu_hourly.dim_city")
+        cursor.execute("SELECT city_id, city_code, city_name, latitude, longitude, country FROM weatherxu_daily.dim_city")
         city_mapping = {row[2]: row[0] for row in cursor.fetchall()}
 
-        cursor.execute("SELECT condition_id, condition_name FROM weatherxu_hourly.dim_condition")
+        cursor.execute("SELECT condition_id, condition_name FROM weatherxu_daily.dim_condition")
         condition_mapping = {row[1]: row[0] for row in cursor.fetchall()}
 
         # FIXED: Get the complete datetime, not just the date
-        cursor.execute("SELECT date_id, datetime FROM weatherxu_hourly.dim_date")
+        cursor.execute("SELECT date_id, datetime FROM weatherxu_daily.dim_date")
         date_mapping = {row[1]: row[0] for row in cursor.fetchall()}
 
         weather_data = []
@@ -180,22 +180,22 @@ def load_hourlyweather_data(df):
             
             if date_id is not None:
                 weather_data.append(( 
-                   city_id, date_id, condition_id, row['temperature'], row['humidity'],
+                   city_id, date_id, condition_id, row['max_temperature'], row['min_temperature'], row['humidity'],
                    row['wind_speed'], row['pressure'], row['precip_intensity'], row['visibility'], 
                    row['uv_index'], row['cloud_cover'], row['dew_point']
                 ))
 
         query = """
-            INSERT INTO weatherxu_hourly.fact_weather (
-                city_id, date_id, condition_id, temperature, humidity, wind_speed, pressure, 
+            INSERT INTO weatherxu_daily.fact_weather (
+                city_id, date_id, condition_id, max_temperature, min_temperature, humidity, wind_speed, pressure, 
                 precip_intensity, visibility, uv_index, cloud_cover, dew_point
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
         """
 
         execute_batch(cursor, query, weather_data)
         conn.commit()
-        print("hourly weather data loaded successfully, existing data overwritten.")
+        print("daily weather data loaded successfully, existing data overwritten.")
 
     except Exception as e:
         print(f"Error: {e}")
@@ -207,3 +207,4 @@ def load_hourlyweather_data(df):
 
 # Execute the main function
 main()
+

@@ -109,8 +109,7 @@ CREATE TABLE IF NOT EXISTS weatherxu_hourly.dim_date (
     datetime TIMESTAMP NOT NULL,
     date DATE NOT NULL,
     hour_minute VARCHAR(10) NOT NULL,
-    day_of_week VARCHAR(10) NOT NULL,
-    time_of_day VARCHAR(10) NOT NULL  
+    day_of_week VARCHAR(10) NOT NULL
 );
 """
 cursor.execute(create_dim_date_table)

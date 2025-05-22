@@ -1,20 +1,40 @@
-import requests
-import json
-from datetime import datetime
-from typing import Dict, List, Optional, Any
-from kafka import KafkaProducer
-import pandas as pd
+# PLEASE RUN THIS SCRIPT ONLY ONCE.
 
-# API base URL and key
-api_base_url = "https://api.weatherxu.com/v1/weather"
-api_key = "caa1e9d9aad1b714b639a94c80e275ce"
+import psycopg2  # type: ignore
+from psycopg2.extras import execute_batch  # type: ignore
 
-# Kafka configuration
-kafka_broker = "broker:29092"
-kafka_topic = "hourly_weatherxu"
+# PostgreSQL Connection Parameters
+host = "localhost"
+port = "5433"
+dbname = "datahub"
+user = "airflow"
+password = "airflow"
 
-# List of US states and territories with coordinates
-cities = [
+# Database connection
+conn = psycopg2.connect(host=host, port=port, dbname=dbname, user=user, password=password)
+cursor = conn.cursor()
+
+# Drop the weatherxu_daily schema if it exists
+cursor.execute("DROP SCHEMA IF EXISTS weatherxu_daily CASCADE;")
+cursor.execute("CREATE SCHEMA weatherxu_daily;")
+print("Schema 'weatherxu_daily' dropped and recreated.")
+
+create_dim_city_table = """
+CREATE TABLE weatherxu_daily.dim_city (
+    city_id SERIAL PRIMARY KEY,
+    city_code VARCHAR(100),
+    city_name VARCHAR(100) NOT NULL,
+    latitude DECIMAL(9, 6),
+    longitude DECIMAL(9, 6),
+    country VARCHAR(100)
+);
+"""
+
+cursor.execute(create_dim_city_table)
+print("Table 'weatherxu_daily.dim_city' created.")
+
+# Data to insert into the table
+us_states = [
     ('AL', 'Alabama', 32.3668, -86.3000, 'United States'),
     ('AK', 'Alaska', 61.2181, -149.9003, 'United States'),
     ('AZ', 'Arizona', 34.0489, -111.0937, 'United States'),
@@ -71,72 +91,68 @@ cities = [
     ('WY', 'Wyoming', 43.0759, -107.2903, 'United States')
 ]
 
-def fetch_hourly_weather(city):
-    params = {
-        "lat": city[2],
-        "lon": city[3],
-        "api_key": api_key,
-        "units": "metric",
-        "parts": "hourly"  # Keep this as is
-    }
+# Inserting the data into the table
+insert_query = """
+INSERT INTO weatherxu_daily.dim_city (city_code, city_name, latitude, longitude, country)
+VALUES (%s, %s, %s, %s, %s);
+"""
 
-    try:
-        response = requests.get(api_base_url, params=params)
-        response.raise_for_status()
-        return response.json()
-    except Exception as e:
-        print(f"Error fetching weather data for {city[1]}: {e}")
-        return None
+for city in us_states:
+    cursor.execute(insert_query, city)
     
-def produce_to_kafka(producer, topic, key, value):
-    try:
-        producer.send(topic=topic, key=key, value=value)
-        producer.flush()
-    except Exception as e:
-        print(f"Error producing message to Kafka: {e}")
+print("Data inserted into 'weatherxu_daily.dim_city' table.")
 
+# Create the dim_date table
+create_dim_date_table = """
+CREATE TABLE IF NOT EXISTS weatherxu_daily.dim_date (
+    date_id SERIAL PRIMARY KEY,
+    datetime TIMESTAMP NOT NULL,
+    date DATE NOT NULL,
+    hour_minute VARCHAR(10) NOT NULL,
+    day_of_week VARCHAR(10) NOT NULL
+);
+"""
+cursor.execute(create_dim_date_table)
+print("Table 'weatherxu_daily.dim_date' created.")
 
-def consume_weather_data() -> pd.DataFrame:
-    """Fetch and produce hourly weather data to Kafka."""
-    producer = KafkaProducer(
-        bootstrap_servers=kafka_broker,
-        value_serializer=lambda v: json.dumps(v).encode('utf-8'),
-        key_serializer=lambda k: k.encode('utf-8')
-    )
-    
-    for city in cities:
-        result = fetch_hourly_weather(city)
-        if not result or not result.get('success'):
-            continue
+# Create the condition_dim table
+create_dim_condition_table = """
+CREATE TABLE weatherxu_daily.dim_condition (
+    condition_id SERIAL PRIMARY KEY,
+    condition_name VARCHAR(50) NOT NULL
+);
+"""
+cursor.execute(create_dim_condition_table)
+print("Table 'weatherxu_daily.dim_condition' created.")
 
-        data = result.get('data', {})
-        hourly_data = data.get('hourly', {})
-        hourly_data_list = hourly_data.get('data', [])  # Get the list from the 'data' key
+# Create the weather_fact table
+create_fact_weather_table = """
+CREATE TABLE weatherxu_daily.fact_weather (
+    id SERIAL PRIMARY KEY,
+    city_id INT REFERENCES weatherxu_daily.dim_city(city_id),
+    date_id INT REFERENCES weatherxu_daily.dim_date(date_id),
+    condition_id INT REFERENCES weatherxu_daily.dim_condition(condition_id),
+    max_temperature FLOAT,
+    min_temperature FLOAT,
+    humidity FLOAT,
+    wind_speed FLOAT,
+    pressure FLOAT,
+    precip_intensity FLOAT,
+    visibility FLOAT,
+    uv_index FLOAT,
+    cloud_cover FLOAT,
+    dew_point FLOAT
+);
+"""
+cursor.execute(create_fact_weather_table)
+print("Table 'weatherxu_daily.fact_weather' created.")
 
-        for hourly in hourly_data_list:
-            message = {
-                "city": city[1],
-                "temperature": hourly.get("temperature"),
-                "humidity": hourly.get("humidity"),
-                "wind_speed": hourly.get("windSpeed"),
-                "pressure": hourly.get("pressure"),
-                "precip_intensity": hourly.get("precipIntensity"),
-                "visibility": hourly.get("visibility"),
-                "uv_index": hourly.get("uvIndex", None),  
-                "cloud_cover": hourly.get("cloudCover"),
-                "dew_point": hourly.get("dewPoint"),
-                "condition": hourly.get("icon"),
-                "datetime": hourly.get("forecastStart")
-            }
+# Commit the transaction
+conn.commit()
 
-            print(f"Producing hourly message for {city[1]}: {message}")
+# Close the cursor and connection
+cursor.close()
+conn.close()
 
-            produce_to_kafka(
-                producer=producer,
-                topic=kafka_topic,
-                key=city[1],
-                value=message
-            )
-            print("✅ Hourly weather data produced to Kafka successfully!")
+print("All tables created successfully!")
 
-consume_weather_data()

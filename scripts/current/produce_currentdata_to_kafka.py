@@ -109,7 +109,6 @@ def consume_weather_data():
         current_weather = data.get('currently', {})
         dt = data.get('dt')
 
-
         message = {
             "city": city[1],
             "temperature": current_weather.get("temperature"),

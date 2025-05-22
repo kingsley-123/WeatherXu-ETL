@@ -11,7 +11,7 @@ api_key = "caa1e9d9aad1b714b639a94c80e275ce"
 
 # Kafka configuration
 kafka_broker = "broker:29092"
-kafka_topic = "hourly_weatherxu"
+kafka_topic = "daily_weatherxu"
 
 # List of US states and territories with coordinates
 cities = [
@@ -71,13 +71,13 @@ cities = [
     ('WY', 'Wyoming', 43.0759, -107.2903, 'United States')
 ]
 
-def fetch_hourly_weather(city):
+def fetch_daily_weather(city):
     params = {
         "lat": city[2],
         "lon": city[3],
         "api_key": api_key,
         "units": "metric",
-        "parts": "hourly"  # Keep this as is
+        "parts": "daily"  
     }
 
     try:
@@ -95,9 +95,8 @@ def produce_to_kafka(producer, topic, key, value):
     except Exception as e:
         print(f"Error producing message to Kafka: {e}")
 
-
 def consume_weather_data() -> pd.DataFrame:
-    """Fetch and produce hourly weather data to Kafka."""
+    """Fetch and produce daily weather data to Kafka."""
     producer = KafkaProducer(
         bootstrap_servers=kafka_broker,
         value_serializer=lambda v: json.dumps(v).encode('utf-8'),
@@ -105,31 +104,32 @@ def consume_weather_data() -> pd.DataFrame:
     )
     
     for city in cities:
-        result = fetch_hourly_weather(city)
+        result = fetch_daily_weather(city)
         if not result or not result.get('success'):
             continue
 
         data = result.get('data', {})
-        hourly_data = data.get('hourly', {})
-        hourly_data_list = hourly_data.get('data', [])  # Get the list from the 'data' key
+        daily_data = data.get('daily', {})
+        daily_data_list = daily_data.get('data', [])  # Get the list from the 'data' key
 
-        for hourly in hourly_data_list:
+        for daily in daily_data_list:
             message = {
                 "city": city[1],
-                "temperature": hourly.get("temperature"),
-                "humidity": hourly.get("humidity"),
-                "wind_speed": hourly.get("windSpeed"),
-                "pressure": hourly.get("pressure"),
-                "precip_intensity": hourly.get("precipIntensity"),
-                "visibility": hourly.get("visibility"),
-                "uv_index": hourly.get("uvIndex", None),  
-                "cloud_cover": hourly.get("cloudCover"),
-                "dew_point": hourly.get("dewPoint"),
-                "condition": hourly.get("icon"),
-                "datetime": hourly.get("forecastStart")
+                "max_temperature": daily.get("temperatureMax"),
+                "min_temperature": daily.get("temperatureMin"),
+                "humidity": daily.get("humidity"),
+                "wind_speed": daily.get("windSpeedMax"),
+                "pressure": daily.get("pressure"),
+                "precip_intensity": daily.get("precipIntensity"),
+                "visibility": daily.get("visibility"),
+                "uv_index": daily.get("uvIndex", None),  
+                "cloud_cover": daily.get("cloudCover"),
+                "dew_point": daily.get("dewPointMax"),
+                "condition": daily.get("icon"),
+                "datetime": daily.get("forecastStart")
             }
 
-            print(f"Producing hourly message for {city[1]}: {message}")
+            print(f"Producing daily message for {city[1]}: {message}")
 
             produce_to_kafka(
                 producer=producer,
@@ -137,6 +137,7 @@ def consume_weather_data() -> pd.DataFrame:
                 key=city[1],
                 value=message
             )
-            print("✅ Hourly weather data produced to Kafka successfully!")
+            print("✅ Daily weather data produced to Kafka successfully!")
 
 consume_weather_data()
+
