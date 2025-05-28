@@ -42,7 +42,7 @@ The goal of this project was to automate the end-to-end data flow—from ingesti
 
 ## 𝐏𝐫𝐨𝐣𝐞𝐜𝐭 𝐀𝐫𝐜𝐡𝐢𝐭𝐞𝐜𝐭𝐮𝐫𝐞
 
-![Image](https://github.com/user-attachments/assets/e8448bba-99d2-451c-ba23-82a2be5eba89)
+[![Image](https://github.com/user-attachments/assets/e8448bba-99d2-451c-ba23-82a2be5eba89)](https://github.com/user-attachments/assets/3000d6ca-1c8a-4b08-a24f-e354b57ae98f)
 
 ## 𝐏𝐫𝐨𝐜𝐞𝐬𝐬 𝐎𝐯𝐞𝐫𝐯𝐢𝐞𝐰
 
